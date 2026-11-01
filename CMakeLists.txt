@@ -5,6 +5,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# A5 / MSVC: M_PI requires _USE_MATH_DEFINES before <cmath>
+if(MSVC)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 # GGML Backend Options (pass-through to ggml subproject)
 # Goal: allow building with any ggml-native accelerator backend on other machines.
 # These options mirror ggml/llama.cpp-style flags.
@@ -149,7 +154,16 @@ target_include_directories(codec_audio_lm_objs
 
 add_library(codec        STATIC $<TARGET_OBJECTS:codec_objs>)
 add_library(codec_shared SHARED $<TARGET_OBJECTS:codec_objs> $<TARGET_OBJECTS:codec_audio_lm_objs>)
-set_target_properties(codec_shared PROPERTIES OUTPUT_NAME codec)
+# Windows: STATIC `codec` already emits codec.lib; shared must not reuse that name.
+# WINDOWS_EXPORT_ALL_SYMBOLS: headers have no CODEC_API/dllexport; ctypes needs
+# codec_* exports on the DLL (tts-cli links statically and does not need them).
+if(WIN32)
+  set_target_properties(codec_shared PROPERTIES
+      OUTPUT_NAME codec_shared
+      WINDOWS_EXPORT_ALL_SYMBOLS ON)
+else()
+  set_target_properties(codec_shared PROPERTIES OUTPUT_NAME codec)
+endif()
 
 target_include_directories(codec_objs
     PUBLIC
@@ -270,11 +284,11 @@ if(CODEC_BUILD_TTS_CLI)
         target_include_directories(codec_tts_runner
             PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/common
             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${TTS_BACKBONE_INCLUDE_DIRS})
-        target_link_libraries(codec_tts_runner PUBLIC codec_common PRIVATE "${TTS_BACKBONE_SO}")
+        target_link_libraries(codec_tts_runner PUBLIC codec_common PRIVATE "${TTS_BACKBONE_LINK}")
 
         add_dependencies(tts-cli ttsbackbone)
         target_compile_definitions(tts-cli PRIVATE TTS_CLI_HAVE_BACKBONE=1)
-        target_link_libraries(tts-cli PRIVATE codec_tts_runner "${TTS_BACKBONE_SO}")
+        target_link_libraries(tts-cli PRIVATE codec_tts_runner "${TTS_BACKBONE_LINK}")
         set_target_properties(tts-cli PROPERTIES
             BUILD_RPATH "${CMAKE_BINARY_DIR}/ttsbackbone;${CMAKE_BINARY_DIR}/ggml/src")
 
