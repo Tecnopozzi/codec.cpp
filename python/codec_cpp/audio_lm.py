@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Sequence
 
@@ -371,7 +372,11 @@ class AudioLM:
         nch = 1 if x.ndim == 1 else x.shape[1]
         buf = _ffi.codec_pcm_buffer()
         # The library resizes the buffer in place (malloc / free): hand it a malloc'd copy.
-        libc = ctypes.CDLL(None)
+        # CDLL(None) is libc on POSIX; on Windows use the UCRT that MSVC-built libcodec links.
+        if sys.platform == "win32":
+            libc = ctypes.CDLL("ucrtbase")
+        else:
+            libc = ctypes.CDLL(None)
         libc.malloc.restype = ctypes.c_void_p
         libc.malloc.argtypes = [ctypes.c_size_t]
         p = libc.malloc(max(1, x.size) * 4)
