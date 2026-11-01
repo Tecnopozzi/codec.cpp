@@ -22,8 +22,17 @@
 include(ExternalProject)
 
 set(_ll_dir "${CMAKE_CURRENT_SOURCE_DIR}/common/third-party/llama.cpp")
+# A5: backbone remains an isolated SHARED lib (hides ggml); MSVC exports via .def.
+set(TTS_BACKBONE_STATIC OFF)
 set(TTS_BACKBONE_SO
     "${CMAKE_BINARY_DIR}/ttsbackbone/${CMAKE_SHARED_LIBRARY_PREFIX}ttsbackbone${CMAKE_SHARED_LIBRARY_SUFFIX}")
+if(WIN32)
+  set(TTS_BACKBONE_LINK
+      "${CMAKE_BINARY_DIR}/ttsbackbone/ttsbackbone${CMAKE_IMPORT_LIBRARY_SUFFIX}")
+else()
+  set(TTS_BACKBONE_LINK "${TTS_BACKBONE_SO}")
+endif()
+
 
 # Every GGML_* cache option, at the value codec.cpp's ggml sees.  Left out:
 # the ones the isolation fixes (static, no backend DL), install paths and
@@ -47,15 +56,22 @@ endforeach()
 
 # Toolchain / target platform (cross builds: Android NDK, iOS / macOS
 # architectures, CUDA / HIP GPU archs).
-foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_C_COMPILER CMAKE_CXX_COMPILER
-           CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER CMAKE_C_FLAGS CMAKE_CXX_FLAGS
-           CMAKE_SYSTEM_NAME CMAKE_SYSTEM_PROCESSOR CMAKE_SYSTEM_VERSION
-           CMAKE_OSX_ARCHITECTURES CMAKE_OSX_DEPLOYMENT_TARGET CMAKE_OSX_SYSROOT
-           CMAKE_FIND_ROOT_PATH CMAKE_PREFIX_PATH
-           ANDROID_ABI ANDROID_PLATFORM ANDROID_NDK ANDROID_STL
-           CMAKE_CUDA_COMPILER CMAKE_CUDA_HOST_COMPILER CMAKE_CUDA_ARCHITECTURES
-           CMAKE_HIP_COMPILER CMAKE_HIP_ARCHITECTURES AMDGPU_TARGETS
-           Vulkan_INCLUDE_DIR Vulkan_LIBRARY Vulkan_GLSLC_EXECUTABLE)
+# Native Windows/Linux: do NOT forward CMAKE_SYSTEM_* — setting
+# CMAKE_SYSTEM_NAME even to the host OS makes ExternalProject try_run()
+# think it is cross-compiling (breaks ggml CPU feature detection).
+set(_ll_platform_vars
+    CMAKE_TOOLCHAIN_FILE CMAKE_C_COMPILER CMAKE_CXX_COMPILER
+    CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER CMAKE_C_FLAGS CMAKE_CXX_FLAGS
+    CMAKE_OSX_ARCHITECTURES CMAKE_OSX_DEPLOYMENT_TARGET CMAKE_OSX_SYSROOT
+    CMAKE_FIND_ROOT_PATH CMAKE_PREFIX_PATH
+    ANDROID_ABI ANDROID_PLATFORM ANDROID_NDK ANDROID_STL
+    CMAKE_CUDA_COMPILER CMAKE_CUDA_HOST_COMPILER CMAKE_CUDA_ARCHITECTURES
+    CMAKE_HIP_COMPILER CMAKE_HIP_ARCHITECTURES AMDGPU_TARGETS
+    Vulkan_INCLUDE_DIR Vulkan_LIBRARY Vulkan_GLSLC_EXECUTABLE)
+if(CMAKE_CROSSCOMPILING)
+    list(APPEND _ll_platform_vars CMAKE_SYSTEM_NAME CMAKE_SYSTEM_PROCESSOR CMAKE_SYSTEM_VERSION)
+endif()
+foreach(_v ${_ll_platform_vars})
     if(DEFINED ${_v} AND NOT "${${_v}}" STREQUAL "")
         string(REPLACE ";" "|" _val "${${_v}}")
         list(APPEND _ll_args "-D${_v}=${_val}")
@@ -85,7 +101,7 @@ ExternalProject_Add(ttsbackbone
     BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> --target ttsbackbone --config Release
     # Rebuild on every build: the patched sources change outside ExternalProject's stamps.
     BUILD_ALWAYS    ON
-    BUILD_BYPRODUCTS "${TTS_BACKBONE_SO}"
+    BUILD_BYPRODUCTS "${TTS_BACKBONE_SO}" "${TTS_BACKBONE_LINK}"
     INSTALL_COMMAND ""
     UPDATE_COMMAND  ""
 )
