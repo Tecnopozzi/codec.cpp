@@ -28,7 +28,8 @@ _REPO_ROOT = _PKG_DIR.parents[1]
 if sys.platform == "darwin":
     _LIB_NAMES = ("libcodec.dylib",)
 elif sys.platform == "win32":
-    _LIB_NAMES = ("codec.dll", "libcodec.dll")
+    # CMake OUTPUT_NAME is codec_shared on Win32 (avoids clobbering static codec.lib).
+    _LIB_NAMES = ("codec_shared.dll", "codec.dll", "libcodec.dll")
 else:
     _LIB_NAMES = ("libcodec.so",)
 
@@ -98,7 +99,12 @@ _log_cb = _ffi_mod.codec_log_callback(_on_log)
 # tokenizer patches applied, its ggml hidden), for codec_cpp.TTS.  Separate
 # from libcodec so codec-only users never load llama.cpp; looked up next to
 # libcodec.
-_BACKBONE_LIB_NAMES = ("libttsbackbone.so",)
+if sys.platform == "darwin":
+    _BACKBONE_LIB_NAMES = ("libttsbackbone.dylib",)
+elif sys.platform == "win32":
+    _BACKBONE_LIB_NAMES = ("ttsbackbone.dll", "libttsbackbone.dll")
+else:
+    _BACKBONE_LIB_NAMES = ("libttsbackbone.so",)
 
 _backbone_lib: ctypes.CDLL | None = None
 
